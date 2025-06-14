@@ -2,7 +2,7 @@ name: Daily NSE Options Filter
 
 on:
   schedule:
-    - cron: "0 9 * * *" # Runs every day at 9:00 AM UTC (2:30 PM IST)
+    - cron: "15 15 * * *" # Runs every day at 8:45 PM IST (15:15 UTC)
   workflow_dispatch: # Allows manual triggering
 
 jobs:
