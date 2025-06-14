@@ -1,10 +1,10 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let input_path = "../NSE.json";
+    let input_path = "NSE.json";
     let output_path = "../NSE_Options_Filtered.json";
 
     // Check if input file exists
