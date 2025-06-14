@@ -5,7 +5,7 @@ use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input_path = "NSE.json";
-    let output_path = "../NSE_Options_Filtered.json";
+    let output_path = "NSE_Options_Filtered.json";
 
     // Check if input file exists
     if !Path::new(input_path).exists() {
