@@ -50,6 +50,6 @@ jobs:
           git config --local user.name "GitHub Action"
           git add NSE_Options_Filtered.json
           git commit -m "Update filtered NSE options data - $(date)"
-          git push origin main
+          git push origin master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
