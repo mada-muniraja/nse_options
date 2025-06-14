@@ -2,7 +2,7 @@ name: Daily NSE Options Filter
 
 on:
   schedule:
-    - cron: "20 15 * * *" # Runs every day at 8:50 PM IST (15:20 UTC)
+    - cron: "41 15 * * *" # 9:11 PM IST
   workflow_dispatch: # Allows manual triggering
 
 permissions:
