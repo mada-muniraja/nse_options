@@ -1,0 +1,55 @@
+name: Daily NSE Options Filter
+
+on:
+  schedule:
+    - cron: "0 9 * * *" # Runs every day at 9:00 AM UTC (2:30 PM IST)
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  filter-options:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-gnu
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Download and Extract NSE.json
+        run: |
+          curl -o NSE.json.gz https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz
+          gunzip -c NSE.json.gz > NSE.json
+          rm NSE.json.gz
+          # Downloaded and extracted NSE.json from Upstox assets.
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run filter
+        run: |
+          cargo run --release
+          cat NSE_Options_Filtered.json
+
+      - name: Commit and push results
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add NSE_Options_Filtered.json
+          git commit -m "Update filtered NSE options data - $(date)"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
