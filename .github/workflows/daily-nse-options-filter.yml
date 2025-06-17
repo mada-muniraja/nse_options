@@ -48,7 +48,6 @@ jobs:
       - name: Run filter
         run: |
           cargo run --release
-          cat banknifty.json
 
       - name: Commit and push results
         run: |
