@@ -1,30 +1,29 @@
-use serde_json::{Value, json};
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::path::Path;
+use tokio;
+mod api;
+mod file_io;
+mod filter;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+use api::fetch_banknifty_price;
+use file_io::{read_json_file, write_json_file};
+use filter::filter_options;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let input_path = "NSE.json";
-    let output_path = "NSE_Options_Filtered.json";
+    let output_path = "banknifty.json";
 
-    // Check if input file exists
-    if !Path::new(input_path).exists() {
-        eprintln!("Error: Input file '{}' not found.", input_path);
-        std::process::exit(1);
-    }
+    // Fetch current BankNifty price
+    let banknifty_price = fetch_banknifty_price().await?;
+    println!("Current BankNifty Price: {}", banknifty_price);
 
     // Read the JSON file
-    let file = File::open(input_path)?;
-    let reader = BufReader::new(file);
-    let data: Value = serde_json::from_reader(reader)?;
+    let data = read_json_file(input_path)?;
 
-    // Filter for Banknifty and Nifty options
-    let filtered_options = filter_options(&data);
+    // Filter for Banknifty options within 3000 points of current price
+    let filtered_options = filter_options(&data, banknifty_price);
 
     // Write the filtered data to a new JSON file
-    let file = File::create(output_path)?;
-    let writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(writer, &filtered_options)?;
+    write_json_file(output_path, &filtered_options)?;
 
     println!(
         "Successfully filtered {} NSE options and saved to '{}'.",
@@ -32,50 +31,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         output_path
     );
     Ok(())
-}
-
-fn filter_options(data: &Value) -> Value {
-    let mut filtered_options = Vec::new();
-
-    if let Some(array) = data.as_array() {
-        for item in array {
-            if let Some(obj) = item.as_object() {
-                if obj
-                    .get("name")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("")
-                    .eq_ignore_ascii_case("BANKNIFTY")
-                    || obj
-                        .get("name")
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("")
-                        .eq_ignore_ascii_case("NIFTY")
-                {
-                    filtered_options.push(item.clone());
-                }
-            }
-        }
-    } else if let Some(obj) = data.as_object() {
-        if let Some(data_array) = obj.get("data").and_then(|d| d.as_array()) {
-            for item in data_array {
-                if let Some(obj) = item.as_object() {
-                    if obj
-                        .get("name")
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("")
-                        .eq_ignore_ascii_case("BANKNIFTY")
-                        || obj
-                            .get("name")
-                            .and_then(|s| s.as_str())
-                            .unwrap_or("")
-                            .eq_ignore_ascii_case("NIFTY")
-                    {
-                        filtered_options.push(item.clone());
-                    }
-                }
-            }
-        }
-    }
-
-    json!(filtered_options)
 }
