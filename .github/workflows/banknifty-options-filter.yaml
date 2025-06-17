@@ -53,6 +53,11 @@ jobs:
           fi
           jq empty NSE.json || { echo "Invalid JSON in NSE.json." >&2; exit 1; }
 
+      - name: Debug file contents
+        run: |
+          echo "==== NSE.json ===="
+          cat NSE.json || echo "NSE.json not found"
+
       - name: Run filter
         run: cargo run --release
 
