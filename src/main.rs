@@ -22,12 +22,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         std::process::exit(1);
     }
 
+    // Print absolute path and check file size
+    let abs_path =
+        std::fs::canonicalize(input_path).unwrap_or_else(|_| Path::new(input_path).to_path_buf());
+    println!("Reading input file at: {}", abs_path.display());
+    let metadata = std::fs::metadata(&abs_path).unwrap();
+    println!("File size: {} bytes", metadata.len());
+    if metadata.len() == 0 {
+        eprintln!("Error: Input file '{}' is empty.", abs_path.display());
+        std::process::exit(1);
+    }
+    // Print first 200 bytes for debugging
+    use std::io::Read;
+    let mut file_preview = File::open(&abs_path).unwrap();
+    let mut buffer = [0; 200];
+    let n = file_preview.read(&mut buffer).unwrap_or(0);
+    println!(
+        "First {} bytes: {}",
+        n,
+        String::from_utf8_lossy(&buffer[..n])
+    );
+
     // Read the JSON file
     let file = File::open(input_path)
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
     let reader = BufReader::new(file);
-    let data: Value = serde_json::from_reader(reader)
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    let data: Value = serde_json::from_reader(reader).map_err(|e| {
+        eprintln!("JSON parse error: {}", e);
+        Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+    })?;
 
     // Filter for Banknifty options within 3000 points of current price
     let filtered_options = filter_options(&data, banknifty_price);
