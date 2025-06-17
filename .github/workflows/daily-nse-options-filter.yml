@@ -42,8 +42,8 @@ jobs:
           rm NSE.json.gz
           # Downloaded and extracted NSE.json from Upstox assets.
 
-      - name: Build
-        run: cargo build --release
+      # - name: Build
+      #   run: cargo build --release
 
       - name: Run filter
         run: |
