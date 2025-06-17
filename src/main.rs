@@ -1,6 +1,5 @@
 // This file is part of the BankNifty Options Filter project.
 use chrono::{Datelike, Local, Months, Timelike};
-use reqwest::Client;
 use serde_json::{Value, json};
 use std::fs::File;
 use std::io::{BufWriter, Read};
@@ -12,6 +11,7 @@ use tokio;
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let input_path = "NSE.json";
     let output_path = "banknifty.json";
+    let banknifty_previous_close = 55000.0; // Replace with actual previous close price as needed
 
     let cwd = std::env::current_dir().unwrap();
     println!("Current working directory: {}", cwd.display());
@@ -23,8 +23,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
 
-    let banknifty_price = fetch_banknifty_price().await?;
-    println!("Current BankNifty Price: {}", banknifty_price);
+    // Hardcoded BankNifty previous close price due to issues with API fetching
+
+    println!(
+        "Hardcoded BankNifty Previous Close: {}",
+        banknifty_previous_close
+    );
 
     if !Path::new(input_path).exists() {
         eprintln!("Error: Input file '{}' not found.", input_path);
@@ -72,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
-    let filtered_options = filter_options(&data, banknifty_price);
+    let filtered_options = filter_options(&data, banknifty_previous_close);
 
     let file = File::create(output_path)
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
@@ -87,60 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
-async fn fetch_banknifty_price() -> Result<f64, Box<dyn std::error::Error + Send + Sync>> {
-    use reqwest::header::{ACCEPT, HeaderMap, HeaderValue, REFERER, USER_AGENT};
-    use std::time::Duration;
-
-    println!("[INFO] Fetching BankNifty price from NSE...");
-
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"),
-    );
-    headers.insert(
-        REFERER,
-        HeaderValue::from_static("https://www.nseindia.com/option-chain"),
-    );
-    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-
-    let client = Client::builder()
-        .default_headers(headers)
-        .timeout(Duration::from_secs(10))
-        .build()?;
-
-    let url = "https://www.nseindia.com/api/option-chain-indices?symbol=BANKNIFTY";
-
-    let response = client.get(url).send().await?;
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP request failed with status: {}", response.status()).into());
-    }
-
-    let text = response.text().await?;
-    println!("[INFO] Raw response length: {} bytes", text.len());
-
-    let json_data: serde_json::Value = match serde_json::from_str(&text) {
-        Ok(val) => val,
-        Err(e) => {
-            eprintln!("[ERROR] Failed to parse response JSON: {}", e);
-            return Err(Box::new(e));
-        }
-    };
-
-    if let Some(records) = json_data.get("records") {
-        if let Some(underlying_value) = records.get("underlyingValue") {
-            if let Some(price) = underlying_value.as_f64() {
-                println!("[INFO] Fetched BankNifty price: {}", price);
-                return Ok(price);
-            }
-        }
-    }
-
-    Err("BankNifty price not found in API response.".into())
-}
-
-fn filter_options(data: &Value, banknifty_price: f64) -> Value {
+fn filter_options(data: &Value, _banknifty_previous_close: f64) -> Value {
     let mut initial_filtered_options = Vec::new();
     let mut final_filtered_options = Vec::new();
 
@@ -189,8 +140,9 @@ fn filter_options(data: &Value, banknifty_price: f64) -> Value {
                 .get("strike_price")
                 .and_then(|s| s.as_f64())
                 .unwrap_or(0.0);
-            let is_within_price_range = strike_price >= banknifty_price - 3000.0
-                && strike_price <= banknifty_price + 3000.0;
+            // Use a fixed range since current price is not available
+            let is_within_price_range = strike_price >= _banknifty_previous_close - 3000.0
+                && strike_price <= _banknifty_previous_close + 3000.0;
 
             if is_within_price_range {
                 final_filtered_options.push(item.clone());
