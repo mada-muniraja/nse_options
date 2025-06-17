@@ -12,6 +12,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let input_path = "NSE.json";
     let output_path = "banknifty.json";
 
+    // Print current working directory and list files for debugging
+    let cwd = std::env::current_dir().unwrap();
+    println!("Current working directory: {}", cwd.display());
+    let entries = std::fs::read_dir(&cwd).unwrap();
+    println!("Files in current directory:");
+    for entry in entries {
+        if let Ok(entry) = entry {
+            println!("- {}", entry.file_name().to_string_lossy());
+        }
+    }
+
     // Fetch current BankNifty price
     let banknifty_price = fetch_banknifty_price().await?;
     println!("Current BankNifty Price: {}", banknifty_price);
