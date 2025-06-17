@@ -1,173 +1,159 @@
 // This file is part of the BankNifty Options Filter project.
+
+// Import necessary crates
 use chrono::{Datelike, Local, Months, Timelike};
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize}; // Import Deserialize and Serialize
 use std::fs::File;
-use std::io::{BufWriter, Read};
+use std::io::{BufReader, BufWriter, Read}; // Use BufReader for potentially faster reads
 use std::path::Path;
 use std::{thread, time::Duration};
 use tokio;
+
+// Define a struct that represents the structure of an option in the JSON.
+// This is much more efficient than using the generic serde_json::Value.
+#[derive(Deserialize, Serialize, Debug, Clone)] // Derive Deserialize, Serialize, Debug and Clone
+struct OptionData {
+    name: String,
+    expiry: Option<i64>,
+    strike_price: Option<f64>,
+    asset_key: Option<String>,
+    asset_symbol: Option<String>,
+    asset_type: Option<String>,
+    exchange: Option<String>,
+    exchange_token: Option<String>,
+    freeze_quantity: Option<f64>,
+    instrument_key: Option<String>,
+    instrument_type: Option<String>,
+    lot_size: Option<i64>,
+    minimum_lot: Option<i64>,
+    qty_multiplier: Option<f64>,
+    segment: Option<String>,
+    tick_size: Option<f64>,
+    trading_symbol: Option<String>,
+    underlying_key: Option<String>,
+    underlying_symbol: Option<String>,
+    underlying_type: Option<String>,
+    weekly: Option<bool>,
+    // Add other fields from the JSON here if you need them, otherwise they are ignored.
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let input_path = "NSE.json";
     let output_path = "banknifty.json";
-    let banknifty_previous_close = 55000.0; // Replace with actual previous close price as needed
+    let strike_limit = 2000.0;
+    let banknifty_previous_close = 55714.15; // Replace with actual previous close price as needed
 
-    let cwd = std::env::current_dir().unwrap();
-    println!("Current working directory: {}", cwd.display());
-    let entries = std::fs::read_dir(&cwd).unwrap();
-    println!("Files in current directory:");
-    for entry in entries {
-        if let Ok(entry) = entry {
-            println!("- {}", entry.file_name().to_string_lossy());
-        }
-    }
-
-    // Hardcoded BankNifty previous close price due to issues with API fetching
-
-    println!(
-        "Hardcoded BankNifty Previous Close: {}",
-        banknifty_previous_close
-    );
-
+    // --- File reading section is largely the same, but improved with BufReader ---
     if !Path::new(input_path).exists() {
         eprintln!("Error: Input file '{}' not found.", input_path);
         std::process::exit(1);
     }
 
-    let abs_path =
-        std::fs::canonicalize(input_path).unwrap_or_else(|_| Path::new(input_path).to_path_buf());
-    println!("Reading input file at: {}", abs_path.display());
-    let metadata = std::fs::metadata(&abs_path).unwrap();
-    println!("File size: {} bytes", metadata.len());
-
+    let file = File::open(input_path)?;
+    let mut reader = BufReader::new(file); // Use a BufReader for efficiency
     let mut contents = String::new();
-    let mut retries = 5;
-    let mut success = false;
 
+    // The retry logic remains useful for cases where the file is being written to
+    let mut retries = 5;
     while retries > 0 {
         contents.clear();
-        if let Ok(mut file) = File::open(&abs_path) {
-            if file.read_to_string(&mut contents).is_ok() && !contents.trim().is_empty() {
-                success = true;
-                break;
-            }
+        reader.read_to_string(&mut contents)?;
+        if !contents.trim().is_empty() {
+            break;
         }
         eprintln!("Warning: NSE.json is empty or unreadable. Retrying in 2 seconds...");
         thread::sleep(Duration::from_secs(2));
+        // Reset reader to the beginning of the file for the next attempt
+        use std::io::Seek;
+        reader.seek(std::io::SeekFrom::Start(0))?;
         retries -= 1;
     }
 
-    if !success {
+    if contents.is_empty() {
         eprintln!("[ERROR] NSE.json could not be read after retries. Aborting.");
         std::process::exit(1);
     }
 
-    println!(
-        "First 200 chars before parsing: {}",
-        &contents.chars().take(200).collect::<String>()
-    );
-
-    let data: Value = match serde_json::from_str(&contents) {
+    // OPTIMIZATION: Deserialize directly into a Vec of our struct.
+    // This is faster and uses less memory than parsing to serde_json::Value.
+    let data: Vec<OptionData> = match serde_json::from_str(&contents) {
         Ok(val) => val,
         Err(e) => {
-            eprintln!("[ERROR] Failed to parse NSE.json as JSON: {}", e);
+            eprintln!("[ERROR] Failed to parse NSE.json: {}", e);
             std::process::exit(1);
         }
     };
 
-    let filtered_options = filter_options(&data, banknifty_previous_close);
+    println!("Successfully parsed {} options from NSE.json.", data.len());
 
-    let file = File::create(output_path)
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    // The filtering logic is now self-contained in the `filter_options` function.
+    let mut filtered_options = filter_options(&data, banknifty_previous_close, strike_limit);
+
+    // OPTIMIZATION: Sort using sort_by_key for clarity and efficiency.
+    filtered_options.sort_by_key(|opt| opt.expiry);
+
+    // --- Writing the output file ---
+    let file = File::create(output_path)?;
     let writer = BufWriter::new(file);
+    // Serialize the Vec<OptionData> back to JSON
     serde_json::to_writer_pretty(writer, &filtered_options)?;
 
     println!(
-        "Successfully filtered {} NSE options and saved to '{}'.",
-        filtered_options.as_array().unwrap_or(&vec![]).len(),
+        "Successfully filtered {} options and saved to '{}'.",
+        filtered_options.len(),
         output_path
     );
     Ok(())
 }
 
-fn filter_options(data: &Value, _banknifty_previous_close: f64) -> Value {
-    let mut initial_filtered_options = Vec::new();
-    let mut final_filtered_options = Vec::new();
-
+/// Filters a slice of OptionData based on name, expiry date, and strike price.
+fn filter_options(
+    data: &[OptionData],
+    banknifty_previous_close: f64,
+    strike_limit: f64,
+) -> Vec<OptionData> {
+    // Calculate the date range once, before the loop.
     let now = Local::now();
-    let start_of_month = now
+    let start_of_month_timestamp = now
         .with_day(1)
         .unwrap()
         .with_hour(0)
         .unwrap()
-        .with_minute(0)
-        .unwrap()
-        .with_second(0)
-        .unwrap();
-    let end_of_range = start_of_month + Months::new(3);
-    let end_of_range_timestamp = end_of_range.timestamp_millis();
+        .timestamp_millis();
+    let end_of_range_timestamp = (now.with_day(1).unwrap() + Months::new(3)).timestamp_millis();
 
-    if let Some(array) = data.as_array() {
-        for item in array {
-            if let Some(obj) = item.as_object() {
-                let is_banknifty = obj
-                    .get("name")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("")
-                    .eq_ignore_ascii_case("BANKNIFTY");
+    // Define the valid strike price range.
+    let strike_price_range =
+        (banknifty_previous_close - strike_limit)..=(banknifty_previous_close + strike_limit);
 
-                let expiry_timestamp = obj.get("expiry").and_then(|e| e.as_i64()).unwrap_or(0);
+    // OPTIMIZATION: Use a single iterator chain to perform all filtering steps in one pass.
+    // This avoids intermediate allocations and cloning.
+    let filtered: Vec<OptionData> = data
+        .iter()
+        .filter(|opt| {
+            // Condition 1: Name must be "BANKNIFTY"
+            let is_banknifty = opt.name.eq_ignore_ascii_case("BANKNIFTY");
 
-                let is_within_three_months = expiry_timestamp > start_of_month.timestamp_millis()
-                    && expiry_timestamp <= end_of_range_timestamp;
+            // Condition 2: Expiry must be within the next 3 months
+            let is_within_three_months = opt
+                .expiry
+                .map(|exp| exp > start_of_month_timestamp && exp <= end_of_range_timestamp)
+                .unwrap_or(false);
 
-                if is_banknifty && is_within_three_months {
-                    initial_filtered_options.push(item.clone());
-                }
-            }
-        }
-    }
+            // Condition 3: Strike price must be within the specified range
+            let is_within_price_range = opt
+                .strike_price
+                .map(|sp| strike_price_range.contains(&sp))
+                .unwrap_or(false);
 
-    println!(
-        "Initially filtered {} BankNifty options based on name and expiry date.",
-        initial_filtered_options.len()
-    );
+            // The option is kept only if all conditions are true
+            is_banknifty && is_within_three_months && is_within_price_range
+        })
+        .cloned() // Clone the few items that pass the filter
+        .collect(); // Collect the results into a new Vec
 
-    for item in initial_filtered_options {
-        if let Some(obj) = item.as_object() {
-            let strike_price = obj
-                .get("strike_price")
-                .and_then(|s| s.as_f64())
-                .unwrap_or(0.0);
-            // Use a fixed range since current price is not available
-            let is_within_price_range = strike_price >= _banknifty_previous_close - 3000.0
-                && strike_price <= _banknifty_previous_close + 3000.0;
+    println!("Filtered {} options based on all criteria.", filtered.len());
 
-            if is_within_price_range {
-                final_filtered_options.push(item.clone());
-            }
-        }
-    }
-
-    println!(
-        "After applying strike price range filter, {} options remain.",
-        final_filtered_options.len()
-    );
-
-    final_filtered_options.sort_by(|a, b| {
-        let expiry_a = a
-            .as_object()
-            .and_then(|obj| obj.get("expiry"))
-            .and_then(|e| e.as_i64())
-            .unwrap_or(0);
-        let expiry_b = b
-            .as_object()
-            .and_then(|obj| obj.get("expiry"))
-            .and_then(|e| e.as_i64())
-            .unwrap_or(0);
-        expiry_a.cmp(&expiry_b)
-    });
-
-    json!(final_filtered_options)
+    filtered
 }
