@@ -1,6 +1,6 @@
 # NSE Options Filter
 
-A Rust application for filtering options data from the National Stock Exchange (NSE), specifically focusing on BANKNIFTY options. This tool reads options data from a JSON file, applies filtering criteria based on name, expiry date, and strike price, and outputs the filtered results to a new JSON file.
+A Rust application for filtering options instruments from the National Stock Exchange (NSE), specifically focusing on BANKNIFTY options. This tool reads options data from a JSON file, applies filtering criteria based on name, expiry date, and strike price, and outputs the filtered results to a new JSON file.
 
 ## Purpose
 
