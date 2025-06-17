@@ -1,3 +1,4 @@
+// This file is part of the BankNifty Options Filter project.
 use chrono::{Datelike, Local, Months, Timelike};
 use reqwest::Client;
 use serde_json::{Value, json};
