@@ -41,8 +41,14 @@ jobs:
       - name: Download and Extract NSE.json
         run: |
           curl -o NSE.json.gz https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz
+          echo "Downloaded NSE.json.gz"
           gunzip -c NSE.json.gz > NSE.json
+          echo "Extracted NSE.json"
           rm NSE.json.gz
+          echo "Removed NSE.json.gz"
+          ls -lh NSE.json
+          echo "First 100 lines of NSE.json:"
+          head -n 100 NSE.json
           # Downloaded and extracted NSE.json from Upstox assets.
 
       - name: Validate NSE.json
