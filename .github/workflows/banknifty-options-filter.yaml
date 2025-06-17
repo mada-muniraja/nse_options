@@ -47,6 +47,8 @@ jobs:
           rm NSE.json.gz
           echo "Removed NSE.json.gz"
           ls -lh NSE.json
+          echo "Absolute path of NSE.json:"
+          realpath NSE.json
           echo "First 100 lines of NSE.json:"
           head -n 100 NSE.json
           # Downloaded and extracted NSE.json from Upstox assets.
