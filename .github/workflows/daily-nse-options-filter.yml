@@ -42,6 +42,14 @@ jobs:
           rm NSE.json.gz
           # Downloaded and extracted NSE.json from Upstox assets.
 
+      - name: Validate NSE.json
+        run: |
+          if [[ ! -s NSE.json ]]; then
+            echo "NSE.json is empty or missing." >&2
+            exit 1
+          fi
+          jq empty NSE.json || { echo "Invalid JSON in NSE.json." >&2; exit 1; }
+
       # - name: Build
       #   run: cargo build --release
 
