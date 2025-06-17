@@ -1,3 +1,11 @@
+// Description: This Rust program fetches the current BankNifty price from an API,
+// reads a JSON file containing NSE options data, filters the options for BankNifty within a specified range of the current price, and writes the filtered options to a new JSON file.
+//
+// It uses the `tokio` runtime for asynchronous operations and handles errors gracefully.
+// It also includes modules for API interaction, file I/O, and filtering logic.
+// It is designed to be run in a Rust environment with the necessary dependencies included in the `Cargo.toml` file.
+// The program is structured to be modular, with separate files for API calls, file operations, and filtering logic.
+// This is the main entry point of the program.
 use tokio;
 mod api;
 mod file_io;
