@@ -3,7 +3,7 @@ use chrono::{Datelike, Local, Months, Timelike};
 use reqwest::Client;
 use serde_json::{Value, json};
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufWriter, Read};
 use std::path::Path;
 use tokio;
 
@@ -44,7 +44,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         std::process::exit(1);
     }
     // Print first 200 bytes for debugging
-    use std::io::Read;
     let mut file_preview = File::open(&abs_path).unwrap();
     let mut buffer = [0; 200];
     let n = file_preview.read(&mut buffer).unwrap_or(0);
@@ -54,14 +53,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         String::from_utf8_lossy(&buffer[..n])
     );
 
-    // Read the JSON file
-    let file = File::open(input_path)
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-    let reader = BufReader::new(file);
-    let data: Value = serde_json::from_reader(reader).map_err(|e| {
-        eprintln!("JSON parse error: {}", e);
-        Box::new(e) as Box<dyn std::error::Error + Send + Sync>
-    })?;
+    // Print first 32 bytes as hex to check for BOM or encoding issues
+    let mut file_hex = File::open(&abs_path).unwrap();
+    let mut hex_buffer = [0u8; 32];
+    let n_hex = file_hex.read(&mut hex_buffer).unwrap_or(0);
+    print!("First {} bytes in hex:", n_hex);
+    for b in &hex_buffer[..n_hex] {
+        print!(" {:02x}", b);
+    }
+    println!("");
+
+    // Add a short delay to avoid race conditions (especially in CI)
+    use std::{thread, time};
+    let delay = time::Duration::from_millis(500);
+    println!("Sleeping for 500ms before reading NSE.json to avoid race conditions...");
+    thread::sleep(delay);
+
+    // Re-check file size and contents before parsing
+    let metadata = std::fs::metadata(&abs_path).unwrap();
+    if metadata.len() == 0 {
+        eprintln!("[ERROR] NSE.json is empty just before parsing. Aborting.");
+        std::process::exit(1);
+    }
+    let mut file_check = File::open(&abs_path).unwrap();
+    let mut preview = String::new();
+    let _ = file_check.read_to_string(&mut preview);
+    if preview.trim().is_empty() {
+        eprintln!("[ERROR] NSE.json contains only whitespace just before parsing. Aborting.");
+        std::process::exit(1);
+    }
+    // Optionally, print first 200 chars for debug
+    println!(
+        "First 200 chars before parsing: {}",
+        &preview.chars().take(200).collect::<String>()
+    );
+    // Try parsing as JSON, with error context
+    let data: Value = match serde_json::from_str(&preview) {
+        Ok(val) => val,
+        Err(e) => {
+            eprintln!("[ERROR] Failed to parse NSE.json as JSON: {}", e);
+            eprintln!(
+                "First 200 chars: {}",
+                &preview.chars().take(200).collect::<String>()
+            );
+            std::process::exit(1);
+        }
+    };
 
     // Filter for Banknifty options within 3000 points of current price
     let filtered_options = filter_options(&data, banknifty_price);
