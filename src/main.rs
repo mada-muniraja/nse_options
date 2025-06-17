@@ -1,19 +1,10 @@
-// Description: This Rust program fetches the current BankNifty price from an API,
-// reads a JSON file containing NSE options data, filters the options for BankNifty within a specified range of the current price, and writes the filtered options to a new JSON file.
-//
-// It uses the `tokio` runtime for asynchronous operations and handles errors gracefully.
-// It also includes modules for API interaction, file I/O, and filtering logic.
-// It is designed to be run in a Rust environment with the necessary dependencies included in the `Cargo.toml` file.
-// The program is structured to be modular, with separate files for API calls, file operations, and filtering logic.
-// This is the main entry point of the program.
+use chrono::{Datelike, Local, Months, Timelike};
+use reqwest::Client;
+use serde_json::{Value, json};
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
+use std::path::Path;
 use tokio;
-mod api;
-mod file_io;
-mod filter;
-
-use api::fetch_banknifty_price;
-use file_io::{read_json_file, write_json_file};
-use filter::filter_options;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -24,14 +15,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let banknifty_price = fetch_banknifty_price().await?;
     println!("Current BankNifty Price: {}", banknifty_price);
 
+    // Check if input file exists
+    if !Path::new(input_path).exists() {
+        eprintln!("Error: Input file '{}' not found.", input_path);
+        std::process::exit(1);
+    }
+
     // Read the JSON file
-    let data = read_json_file(input_path)?;
+    let file = File::open(input_path)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    let reader = BufReader::new(file);
+    let data: Value = serde_json::from_reader(reader)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
     // Filter for Banknifty options within 3000 points of current price
     let filtered_options = filter_options(&data, banknifty_price);
 
     // Write the filtered data to a new JSON file
-    write_json_file(output_path, &filtered_options)?;
+    let file = File::create(output_path)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, &filtered_options)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
     println!(
         "Successfully filtered {} NSE options and saved to '{}'.",
@@ -39,4 +44,142 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         output_path
     );
     Ok(())
+}
+
+async fn fetch_banknifty_price() -> Result<f64, Box<dyn std::error::Error + Send + Sync>> {
+    let client = Client::new();
+    let response = client
+        .get("https://www.nseindia.com/api/option-chain-indices?symbol=BANKNIFTY")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .header("Referer", "https://www.nseindia.com/option-chain")
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+    let text = response
+        .text()
+        .await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+    let json_data: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+    if let Some(records) = json_data.get("records") {
+        if let Some(underlying_value) = records.get("underlyingValue") {
+            if let Some(price) = underlying_value.as_f64() {
+                return Ok(price);
+            }
+        }
+    }
+
+    Err(Box::new(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        "Could not find BankNifty price in the API response",
+    )))
+}
+
+fn filter_options(data: &Value, banknifty_price: f64) -> Value {
+    let mut initial_filtered_options = Vec::new();
+    let mut final_filtered_options = Vec::new();
+
+    // Get current date and calculate the end of the third month from now
+    let now = Local::now();
+    let start_of_month = now
+        .with_day(1)
+        .unwrap()
+        .with_hour(0)
+        .unwrap()
+        .with_minute(0)
+        .unwrap()
+        .with_second(0)
+        .unwrap();
+    let end_of_range = start_of_month + Months::new(3);
+    let end_of_range_timestamp = end_of_range.timestamp_millis();
+
+    // First filter: by name and expiry date
+    if let Some(array) = data.as_array() {
+        for item in array {
+            if let Some(obj) = item.as_object() {
+                let is_banknifty = obj
+                    .get("name")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("")
+                    .eq_ignore_ascii_case("BANKNIFTY");
+
+                let expiry_timestamp = obj.get("expiry").and_then(|e| e.as_i64()).unwrap_or(0);
+
+                let is_within_three_months = expiry_timestamp > start_of_month.timestamp_millis()
+                    && expiry_timestamp <= end_of_range_timestamp;
+
+                if is_banknifty && is_within_three_months {
+                    initial_filtered_options.push(item.clone());
+                }
+            }
+        }
+    } else if let Some(obj) = data.as_object() {
+        if let Some(data_array) = obj.get("data").and_then(|d| d.as_array()) {
+            for item in data_array {
+                if let Some(obj) = item.as_object() {
+                    let is_banknifty = obj
+                        .get("name")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .eq_ignore_ascii_case("BANKNIFTY");
+
+                    let expiry_timestamp = obj.get("expiry").and_then(|e| e.as_i64()).unwrap_or(0);
+
+                    let is_within_three_months = expiry_timestamp
+                        > start_of_month.timestamp_millis()
+                        && expiry_timestamp <= end_of_range_timestamp;
+
+                    if is_banknifty && is_within_three_months {
+                        initial_filtered_options.push(item.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    println!(
+        "Initially filtered {} BankNifty options based on name and expiry date.",
+        initial_filtered_options.len()
+    );
+
+    // Second filter: by strike price range
+    for item in initial_filtered_options {
+        if let Some(obj) = item.as_object() {
+            let strike_price = obj
+                .get("strike_price")
+                .and_then(|s| s.as_f64())
+                .unwrap_or(0.0);
+            let is_within_price_range = strike_price >= banknifty_price - 3000.0
+                && strike_price <= banknifty_price + 3000.0;
+
+            if is_within_price_range {
+                final_filtered_options.push(item.clone());
+            }
+        }
+    }
+    println!(
+        "After applying strike price range filter, {} options remain.",
+        final_filtered_options.len()
+    );
+
+    // Sort the final filtered options by expiry date
+    final_filtered_options.sort_by(|a, b| {
+        let expiry_a = a
+            .as_object()
+            .and_then(|obj| obj.get("expiry"))
+            .and_then(|e| e.as_i64())
+            .unwrap_or(0);
+        let expiry_b = b
+            .as_object()
+            .and_then(|obj| obj.get("expiry"))
+            .and_then(|e| e.as_i64())
+            .unwrap_or(0);
+        expiry_a.cmp(&expiry_b)
+    });
+
+    json!(final_filtered_options)
 }
