@@ -48,14 +48,14 @@ jobs:
       - name: Run filter
         run: |
           cargo run --release
-          cat NSE_Options_Filtered.json
+          cat banknifty.json
 
       - name: Commit and push results
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add NSE_Options_Filtered.json
-          git commit -m "Update filtered NSE options data - $(date)"
+          git add banknifty.json
+          git commit -m "Update filtered banknifty data - $(date)"
           git push origin master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
