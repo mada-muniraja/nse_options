@@ -5,8 +5,8 @@ description: |
 
 on:
   schedule:
-    - cron: "30 2 * * 1-5" # Runs at 2:30 AM UTC, Monday to Friday
-  workflow_dispatch: # Allows manual triggering
+    - cron: "30 2 * * 1-5"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -41,17 +41,9 @@ jobs:
       - name: Download and Extract NSE.json
         run: |
           curl -o NSE.json.gz https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz
-          echo "Downloaded NSE.json.gz"
           gunzip -c NSE.json.gz > NSE.json
-          echo "Extracted NSE.json"
           rm NSE.json.gz
-          echo "Removed NSE.json.gz"
           ls -lh NSE.json
-          echo "Absolute path of NSE.json:"
-          realpath NSE.json
-          echo "First 100 lines of NSE.json:"
-          head -n 100 NSE.json
-          # Downloaded and extracted NSE.json from Upstox assets.
 
       - name: Validate NSE.json
         run: |
@@ -61,12 +53,8 @@ jobs:
           fi
           jq empty NSE.json || { echo "Invalid JSON in NSE.json." >&2; exit 1; }
 
-      # - name: Build
-      #   run: cargo build --release
-
       - name: Run filter
-        run: |
-          cargo run --release
+        run: cargo run --release
 
       - name: Commit and push results
         run: |
