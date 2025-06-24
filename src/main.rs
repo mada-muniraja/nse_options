@@ -41,8 +41,8 @@ struct OptionData {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let input_path = "NSE.json";
     let output_path = "banknifty.json";
-    let strike_limit = 2000.0;
-    let banknifty_previous_close = 55714.15; // Replace with actual previous close price as needed
+    let strike_limit = 1000.0;
+    let banknifty_previous_close = 56059.35; // Replace with actual previous close price as needed
 
     // --- File reading section is largely the same, but improved with BufReader ---
     if !Path::new(input_path).exists() {
